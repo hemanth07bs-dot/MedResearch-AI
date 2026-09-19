@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://medresearch-ai-backend.onrender.com';
 
 function App() {
   const [query, setQuery] = useState('');
@@ -450,7 +450,7 @@ function App() {
       .slice(0, 8)
       .map((p) => `
         <li style="margin-bottom: 10px;">
-          <strong>[${p.db}] ${p.title}</strong><br/>
+          <strong>[${p.db}]${p.title}</strong><br/>
           <span style="color: #64748b; font-size: 13px;">Source: ${p.source} (${p.pubDate})</span>
         </li>
       `)
@@ -473,7 +473,7 @@ function App() {
         <body>
           <div class="header">
             <h1 style="margin: 0; color: #2c2523; font-size: 24px; font-weight: 700;">MedResearch AI Summary</h1>
-            <p style="margin: 6px 0 0 0; color: #8c827a; font-size: 14px;">Condition: <strong>${query.toUpperCase()}</strong> | Date: ${date}</p>
+            <p style="margin: 6px 0 0 0; color: #8c827a; font-size: 14px;">Condition: <strong>${query.toUpperCase()}</strong> \vert{} Date:${date}</p>
           </div>
           <div>
             <span class="badge">Gemini Multi-Source Synthesis</span>
