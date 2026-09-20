@@ -1171,7 +1171,7 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: theme.text }}>👤 Patient Clinical Profile</h3>
               <button
-                onClick={() => setShowProfileDrawer(false)}
+                onClick={() => { localStorage.setItem('medresearch_patient_profile', JSON.stringify(patientProfile)); setShowProfileDrawer(false); }}
                 style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer', color: theme.subText }}
               >
                 ✕
@@ -1218,7 +1218,7 @@ function App() {
               </div>
 
               <button
-                onClick={() => setShowProfileDrawer(false)}
+                onClick={() => { localStorage.setItem('medresearch_patient_profile', JSON.stringify(patientProfile)); setShowProfileDrawer(false); }}
                 style={{
                   backgroundColor: theme.primary,
                   color: '#ffffff',
