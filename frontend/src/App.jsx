@@ -137,9 +137,40 @@ function App() {
         setSphereStatus('LISTENING');
       };
 
-     recognition.onresult = async (event) => {
-         const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
-         setSpokenTranscript(transcript);
+   recognition.onresult = async (event) => {
+        const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
+        setSpokenTranscript(transcript);
+
+        if (event.results[0].isFinal) {
+          setQuery(transcript);
+          setSphereStatus('THINKING');
+          if (recognitionRef.current) recognitionRef.current.stop();
+          setIsListening(false);
+
+          try {
+            // 1. Trigger background medical paper search
+            executeSearch(transcript);
+
+            // 2. Call your actual backend endpoint (/api/ai/chat)
+            const response = await axios.post(`${API_BASE_URL}/api/ai/chat`, {
+              question: transcript,
+              contextPapers: combinedPapers || [],
+              topic: transcript
+            });
+
+            const reply = response.data?.reply || response.data?.answer || response.data?.response || response.data?.summary || `I found research regarding ${transcript}.`;
+            setSpokenTranscript(reply);
+
+            // 3. Speak the reply aloud
+            speakText(reply);
+          } catch (err) {
+            console.error("Voice chat error:", err);
+            const fallbackMsg = `Searching latest clinical research for ${transcript}.`;
+            setSpokenTranscript(fallbackMsg);
+            speakText(fallbackMsg);
+          }
+        }
+      };
 
          if (event.results[0].isFinal) {
            setQuery(transcript);
@@ -270,20 +301,30 @@ function App() {
     };
   }, [voiceModalOpen, sphereStatus]);
 
-  const handleSphereClick = () => {
+ const handleSphereClick = () => {
     if (!recognitionRef.current) {
       alert('Speech recognition is supported in Google Chrome or Microsoft Edge.');
       return;
     }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const unlockUtterance = new SpeechSynthesisUtterance('');
+      window.speechSynthesis.speak(unlockUtterance);
+    }
+
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
       setSphereStatus('READY');
     } else {
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
       setIsSpeaking(false);
       setSpokenTranscript('');
-      recognitionRef.current.start();
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        console.error('Speech recognition start error:', e);
+      }
     }
   };
 
