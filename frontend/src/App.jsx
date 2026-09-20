@@ -148,20 +148,17 @@ function App() {
           setIsListening(false);
 
           try {
-            // 1. Trigger background medical paper search
-            executeSearch(transcript);
-
-            // 2. Call your actual backend endpoint (/api/ai/chat)
+         // 1. Call backend AI endpoint directly
             const response = await axios.post(`${API_BASE_URL}/api/ai/chat`, {
               question: transcript,
               contextPapers: combinedPapers || [],
               topic: transcript
             });
 
-            const reply = response.data?.reply || response.data?.answer || response.data?.response || response.data?.summary || `I found research regarding ${transcript}.`;
+            const reply = response.data?.answer || response.data?.reply || response.data?.response || `Here is what I found about ${transcript}.`;
             setSpokenTranscript(reply);
 
-            // 3. Speak the reply aloud
+            // 2. Speak the reply aloud
             speakText(reply);
           } catch (err) {
             console.error("Voice chat error:", err);
@@ -171,7 +168,6 @@ function App() {
           }
         }
       };
-
          if (event.results[0].isFinal) {
            setQuery(transcript);
            setSphereStatus('THINKING');
