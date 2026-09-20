@@ -137,19 +137,39 @@ function App() {
         setSphereStatus('LISTENING');
       };
 
-      recognition.onresult = (event) => {
-        const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
-        setSpokenTranscript(transcript);
-        if (event.results[0].isFinal) {
-          setQuery(transcript);
-          setSphereStatus('THINKING');
-          executeSearch(transcript);
-          setTimeout(() => {
-            setVoiceModalOpen(false);
-          }, 1200);
-        }
-      };
+     recognition.onresult = async (event) => {
+         const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
+         setSpokenTranscript(transcript);
 
+         if (event.results[0].isFinal) {
+           setQuery(transcript);
+           setSphereStatus('THINKING');
+           if (recognitionRef.current) recognitionRef.current.stop();
+           setIsListening(false);
+
+           try {
+             // 1. Get real-time conversational answer from Gemini backend
+             const response = await axios.post(`${API_BASE_URL}/chat`, {
+               message: transcript,
+               history: chatMessages
+             });
+
+             const reply = response.data?.reply || response.data?.response || "I found research on this topic.";
+             setSpokenTranscript(reply);
+
+             // 2. Also run the background search for medical papers
+             executeSearch(transcript);
+
+             // 3. Speak the answer back aloud like ChatGPT / Gemini
+             speakText(reply);
+           } catch (err) {
+             console.error("Voice chat error:", err);
+             // Fallback: search and announce completion
+             executeSearch(transcript);
+             speakText(`Searching research for ${transcript}`);
+           }
+         }
+       };
       recognition.onerror = () => {
         setIsListening(false);
         setSphereStatus('READY');
