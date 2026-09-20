@@ -550,22 +550,7 @@ function App() {
           >
             ℹ️ How It Works
           </button>
-          {/* Patient Profile Button */}
-          <button
-            onClick={() => setShowProfileDrawer(true)}
-            style={{
-              backgroundColor: theme.pillBg,
-              color: theme.text,
-              border: `1px solid ${theme.border}`,
-              padding: '0.3rem 0.65rem',
-              borderRadius: '9999px',
-              cursor: 'pointer',
-              fontSize: '0.75rem',
-              fontWeight: '700'
-            }}
-          >
-            👤 Profile
-          </button>
+         
           {/* Theme Toggle */}
           <button
             onClick={() => setDarkMode(!darkMode)}
@@ -1143,101 +1128,7 @@ function App() {
         </div>
       )}
 
-      {/* Patient Profile Modal */}
-      {showProfileDrawer && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.6)',
-          zIndex: 9999,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '1rem'
-        }}>
-          <div style={{
-            backgroundColor: theme.cardBg,
-            borderRadius: '20px',
-            padding: '1.75rem',
-            maxWidth: '440px',
-            width: '100%',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-            border: `1px solid ${theme.border}`,
-            textAlign: 'left'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: theme.text }}>👤 Patient Clinical Profile</h3>
-              <button
-                onClick={() => { localStorage.setItem('medresearch_patient_profile', JSON.stringify(patientProfile)); setShowProfileDrawer(false); }}
-                style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer', color: theme.subText }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <p style={{ margin: '0 0 1rem 0', fontSize: '0.8rem', color: theme.subText }}>
-              Set patient baseline metrics to automatically test against inclusion and exclusion trial protocols.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <div>
-                <label style={{ fontSize: '0.78rem', fontWeight: '700', color: theme.subText }}>Patient Age</label>
-                <input
-                  type="number"
-                  value={patientProfile.age}
-                  onChange={(e) => setPatientProfile({ ...patientProfile, age: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, marginTop: '0.25rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', fontWeight: '700', color: theme.subText }}>Biological Sex</label>
-                <select
-                  value={patientProfile.sex}
-                  onChange={(e) => setPatientProfile({ ...patientProfile, sex: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, marginTop: '0.25rem' }}
-                >
-                  <option value="ALL">All / Unspecified</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="MALE">Male</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', fontWeight: '700', color: theme.subText }}>Primary Clinical Notes / History</label>
-                <textarea
-                  rows={3}
-                  value={patientProfile.notes}
-                  onChange={(e) => setPatientProfile({ ...patientProfile, notes: e.target.value })}
-                  placeholder="e.g. Stage II, no prior immunotherapy, normal renal function"
-                  style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, marginTop: '0.25rem', fontFamily: 'inherit' }}
-                />
-              </div>
-
-              <button
-                onClick={() => { localStorage.setItem('medresearch_patient_profile', JSON.stringify(patientProfile)); setShowProfileDrawer(false); }}
-                style={{
-                  backgroundColor: theme.primary,
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.75rem',
-                  borderRadius: '10px',
-                  fontSize: '0.85rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  marginTop: '0.5rem'
-                }}
-              >
-                Save Profile Parameters
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+  
       {/* Floating Bottom Bar */}
       <div style={{
         position: 'fixed',
