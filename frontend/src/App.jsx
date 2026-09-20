@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import ParticleBackground from './ParticleBackground';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://medresearch-ai-backend.onrender.com';
 
@@ -490,22 +491,22 @@ function App() {
     setTimeout(() => { printWindow.print(); }, 400);
   };
 
-  const theme = {
-    bg: darkMode ? '#0b0f19' : '#fbfaf7',
-    cardBg: darkMode ? '#111827' : '#ffffff',
-    text: darkMode ? '#f9fafb' : '#2b2623',
-    subText: darkMode ? '#9ca3af' : '#877c74',
-    border: darkMode ? '#1f2937' : '#f0ebe4',
-    primary: darkMode ? '#38bdf8' : '#b25e46',
-    pillBg: darkMode ? '#1f2937' : '#f6f2ec',
-    topicCardBg: darkMode ? '#111827' : '#ffffff',
-    topicIconBg: darkMode ? '#1e293b' : '#fcf8f4',
-    summaryBg: darkMode ? '#0f172a' : '#ffffff',
-    summaryBorder: darkMode ? '#1e3a8a' : '#eddcd2',
-    chatBubbleUser: darkMode ? '#2563eb' : '#b25e46',
-    chatBubbleAi: darkMode ? '#1e293b' : '#fcf9f6',
-    dockBg: darkMode ? '#111827' : '#ffffff',
-    dockBorder: darkMode ? '#1f2937' : '#ede7df',
+ const theme = {
+    bg: darkMode ? '#070b14' : '#ffffff',
+    cardBg: darkMode ? 'rgba(15, 23, 42, 0.72)' : 'rgba(255, 255, 255, 0.88)',
+    text: darkMode ? '#f1f5f9' : '#0f172a',
+    subText: darkMode ? '#94a3b8' : '#64748b',
+    border: darkMode ? 'rgba(56, 189, 248, 0.18)' : 'rgba(226, 232, 240, 0.8)',
+    primary: darkMode ? '#38bdf8' : '#0ea5e9',
+    pillBg: darkMode ? 'rgba(30, 41, 59, 0.75)' : 'rgba(241, 245, 249, 0.85)',
+    topicCardBg: darkMode ? 'rgba(15, 23, 42, 0.78)' : '#ffffff',
+    topicIconBg: darkMode ? 'rgba(56, 189, 248, 0.12)' : 'rgba(14, 165, 233, 0.08)',
+    summaryBg: darkMode ? 'rgba(15, 23, 42, 0.85)' : '#ffffff',
+    summaryBorder: darkMode ? 'rgba(56, 189, 248, 0.28)' : '#e2e8f0',
+    chatBubbleUser: '#0ea5e9',
+    chatBubbleAi: darkMode ? 'rgba(30, 41, 59, 0.85)' : '#f8fafc',
+    dockBg: darkMode ? 'rgba(11, 15, 25, 0.85)' : 'rgba(255, 255, 255, 0.9)',
+    dockBorder: darkMode ? 'rgba(56, 189, 248, 0.15)' : 'rgba(226, 232, 240, 0.9)',
   };
 
   return (
@@ -515,8 +516,11 @@ function App() {
       color: theme.text,
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
       paddingBottom: '120px',
+position: 'relative',
+    overflowX: 'hidden',
       transition: 'background-color 0.25s ease, color 0.25s ease'
     }}>
+<ParticleBackground darkMode={darkMode} />
       <input
         type="file"
         ref={fileInputRef}
