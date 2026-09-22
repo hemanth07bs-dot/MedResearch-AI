@@ -374,11 +374,15 @@ function App() {
     setEligibilityResults({});
 
     try {
-      const [pubmedRes, openAlexRes, trialsRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/api/research/search?q=${encodeURIComponent(searchTerm)}`),
-        axios.get(`${API_BASE_URL}/api/openalex/search?q=${encodeURIComponent(searchTerm)}`),
-        axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(searchTerm)}&status=${status}`)
-      ]);
+      const [pubmedResult, openalexResult, trialsResult] = await Promise.allSettled([
+          axios.get(`${API_BASE_URL}/api/research/search?q=${encodeURIComponent(searchTerm)}`),
+          axios.get(`${API_BASE_URL}/api/openalex/search?q=${encodeURIComponent(searchTerm)}`),
+          axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(searchTerm)}&status=${status}`)
+        ]);
+
+        const fetchedPubmed = pubmedResult.status === 'fulfilled' ? (pubmedResult.value.data.results || []) : [];
+        const fetchedOpenalex = openalexResult.status === 'fulfilled' ? (openalexResult.value.data.results || []) : [];
+        const fetchedTrials = trialsResult.status === 'fulfilled' ? (trialsResult.value.data.results || []) : [];
 
       const fetchedPubmed = pubmedRes.data.results || [];
       const fetchedOpenAlex = openAlexRes.data.results || [];
