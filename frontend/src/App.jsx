@@ -137,7 +137,7 @@ function App() {
         setSphereStatus('LISTENING');
       };
 
-   recognition.onresult = async (event) => {
+      recognition.onresult = (event) => {
         const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
         setSpokenTranscript(transcript);
 
@@ -146,57 +146,14 @@ function App() {
           setSphereStatus('THINKING');
           if (recognitionRef.current) recognitionRef.current.stop();
           setIsListening(false);
-
-          try {
-         // 1. Call backend AI endpoint directly
-            const response = await axios.post(`${API_BASE_URL}/api/ai/chat`, {
-              question: transcript,
-              contextPapers: combinedPapers || [],
-              topic: transcript
-            });
-
-            const reply = response.data?.answer || response.data?.reply || response.data?.response || `Here is what I found about ${transcript}.`;
-            setSpokenTranscript(reply);
-
-            // 2. Speak the reply aloud
-            speakText(reply);
-          } catch (err) {
-            console.error("Voice chat error:", err);
-            const fallbackMsg = `Searching latest clinical research for ${transcript}.`;
-            setSpokenTranscript(fallbackMsg);
-            speakText(fallbackMsg);
-          }
+          executeSearch(transcript);
+          setTimeout(() => {
+            setVoiceModalOpen(false);
+            setSphereStatus('READY');
+          }, 1200);
         }
       };
-         if (event.results[0].isFinal) {
-           setQuery(transcript);
-           setSphereStatus('THINKING');
-           if (recognitionRef.current) recognitionRef.current.stop();
-           setIsListening(false);
 
-           try {
-             // 1. Get real-time conversational answer from Gemini backend
-             const response = await axios.post(`${API_BASE_URL}/chat`, {
-               message: transcript,
-               history: chatMessages
-             });
-
-             const reply = response.data?.reply || response.data?.response || "I found research on this topic.";
-             setSpokenTranscript(reply);
-
-             // 2. Also run the background search for medical papers
-             executeSearch(transcript);
-
-             // 3. Speak the answer back aloud like ChatGPT / Gemini
-             speakText(reply);
-           } catch (err) {
-             console.error("Voice chat error:", err);
-             // Fallback: search and announce completion
-             executeSearch(transcript);
-             speakText(`Searching research for ${transcript}`);
-           }
-         }
-       };
       recognition.onerror = () => {
         setIsListening(false);
         setSphereStatus('READY');
@@ -383,15 +340,12 @@ function App() {
         const fetchedPubmed = pubmedResult.status === 'fulfilled' ? (pubmedResult.value.data.results || []) : [];
         const fetchedOpenalex = openalexResult.status === 'fulfilled' ? (openalexResult.value.data.results || []) : [];
         const fetchedTrials = trialsResult.status === 'fulfilled' ? (trialsResult.value.data.results || []) : [];
-
-      const fetchedPubmed = pubmedRes.data.results || [];
-      const fetchedOpenAlex = openAlexRes.data.results || [];
       setPubmedPapers(fetchedPubmed);
-      setOpenAlexPapers(fetchedOpenAlex);
-      setTrials(trialsRes.data.results || []);
+      setOpenAlexPapers(fetchedOpenalex);
+      setTrials(fetchedTrials);
       setLoading(false);
 
-      const combinedPapers = [...fetchedPubmed, ...fetchedOpenAlex];
+      const combinedPapers = [...fetchedPubmed, ...fetchedOpenalex];
       if (combinedPapers.length > 0) {
         setAiLoading(true);
         try {
@@ -434,7 +388,7 @@ function App() {
     if (!query.trim()) return;
     try {
       const trialsRes = await axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(query)}&status=${status}`);
-      setTrials(trialsRes.data.results || []);
+      setTrials(fetchedTrials);
     } catch (err) {
       console.error('Error filtering trials:', err);
     }
