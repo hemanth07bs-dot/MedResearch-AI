@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ParticleBackground from './ParticleBackground';
+import LandingHero from './LandingHero';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://medresearch-ai-backend.onrender.com';
+const API_BASE_URL = 'http://localhost:5000';
 
 function App() {
   const [query, setQuery] = useState('');
@@ -15,6 +16,27 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('medresearch_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('medresearch_jwt') || '');
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Saved History & Sidebar Drawer State
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [savedHistory, setSavedHistory] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
 
   // Dynamic time-based greeting helper
   const getGreeting = () => {
@@ -34,7 +56,6 @@ function App() {
     condition: '',
     notes: 'No prior chemotherapy'
   });
-  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   const [eligibilityResults, setEligibilityResults] = useState({});
   const [evaluatingTrialId, setEvaluatingTrialId] = useState(null);
 
@@ -79,8 +100,195 @@ function App() {
     { icon: '🦠', title: 'Immunotherapy', subtitle: 'Cancer immunotherapy clinical trials', query: 'cancer immunotherapy' },
   ];
 
+  // Fetch Saved History from MongoDB
+  const fetchHistory = async () => {
+    if (!authToken) return;
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/history`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      setSavedHistory(res.data.chats || []);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (authToken) {
+      fetchHistory();
+    } else {
+      setSavedHistory([]);
+    }
+  }, [authToken]);
+
+  // Auth Handler: Register & Login
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+
+    try {
+      const res = await axios.post(`${API_BASE_URL}${endpoint}`, authForm);
+      const { token, user } = res.data;
+
+      localStorage.setItem('medresearch_jwt', token);
+      localStorage.setItem('medresearch_user', JSON.stringify(user));
+      setAuthToken(token);
+      setCurrentUser(user);
+      setAuthModalOpen(false);
+      setAuthForm({ name: '', email: '', password: '' });
+    } catch (err) {
+      setAuthError(err.response?.data?.error || 'Authentication failed. Please check credentials.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('medresearch_jwt');
+    localStorage.removeItem('medresearch_user');
+    setAuthToken('');
+    setCurrentUser(null);
+    setSavedHistory([]);
+    setDrawerOpen(false);
+  };
+
+  // Start New Chat Reset
+  const handleNewChat = () => {
+    setQuery('');
+    setPubmedPapers([]);
+    setOpenAlexPapers([]);
+    setTrials([]);
+    setAiSummary('');
+    setChatMessages([]);
+    setEligibilityResults({});
+    setSearched(false);
+    setCurrentChatId(null);
+    setDrawerOpen(false);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  // Delete Chat from History
+  const handleDeleteChat = async (e, id) => {
+    e.stopPropagation();
+    if (!authToken) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/history/${id}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      setSavedHistory((prev) => prev.filter((item) => item._id !== id));
+      if (currentChatId === id) handleNewChat();
+    } catch (err) {
+      console.error('Delete error:', err);
+    }
+  };
+  // 1. Send voice input to Gemini Q&A
+  const handleVoiceConversation = async (userVoiceText) => {
+    if (!userVoiceText || !userVoiceText.trim()) {
+      setSphereStatus('READY');
+      return;
+    }
+
+    setSphereStatus('THINKING');
+
+    const combinedPapers = [...pubmedPapers, ...openAlexPapers];
+    const newChatHistory = [...chatMessages, { role: 'user', text: userVoiceText }];
+    setChatMessages(newChatHistory);
+
+    try {
+      const res = await axios.post(`${API_BASE_URL}/api/ai/chat`, {
+        question: userVoiceText,
+        contextPapers: combinedPapers,
+        topic: query || userVoiceText
+      });
+
+      const aiReply = res.data.answer || "I reviewed the medical data, but could not produce a response.";
+      setChatMessages([...newChatHistory, { role: 'assistant', text: aiReply }]);
+      
+      speakSphereResponse(aiReply);
+    } catch (err) {
+      console.error('Voice conversation error:', err);
+      speakSphereResponse("I ran into an issue finding that clinical information. Please ask again.");
+    }
+  };
+
+  // 2. TTS engine for the Voice Sphere
+  const speakSphereResponse = (text) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+
+    const clean = text.replace(/[*#_`~>\[\]\(\)]/g, '').trim();
+    const sentences = clean.match(/[^.!?]+[.!?]+(\s|$)\vert{}[^.!?]+$/g) || [clean];
+    const validSentences = sentences.map(s => s.trim()).filter(Boolean);
+
+    if (validSentences.length === 0) {
+      setSphereStatus('READY');
+      return;
+    }
+
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.startsWith('en')) || (voices.length > 0 ? voices[0] : null);
+
+    setIsSpeaking(true);
+    setSphereStatus('SPEAKING');
+
+    let idx = 0;
+    const speakNext = () => {
+      if (idx >= validSentences.length) {
+        setIsSpeaking(false);
+        setSphereStatus('READY');
+        return;
+      }
+
+      const utter = new SpeechSynthesisUtterance(validSentences[idx]);
+      utter.rate = 1.0;
+      if (voice) utter.voice = voice;
+
+      utter.onend = () => {
+        idx++;
+        speakNext();
+      };
+
+      utter.onerror = (e) => {
+        if (e.error === 'interrupted' || e.error === 'canceled') return;
+        setIsSpeaking(false);
+        setSphereStatus('READY');
+      };
+
+      window.speechSynthesis.speak(utter);
+    };
+
+    setTimeout(speakNext, 60);
+  };
+
+  // Auto-Save Chat to MongoDB
+  const saveChatToDatabase = async (topicTerm, messages, contextList, chatId = currentChatId) => {
+    if (!authToken || !topicTerm) return;
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/api/history/save`,
+        {
+          chatId,
+          title: topicTerm,
+          topic: topicTerm,
+          messages,
+          contextPapers: contextList || []
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      if (res.data?.chat?._id) {
+        setCurrentChatId(res.data.chat._id);
+        fetchHistory();
+      }
+    } catch (err) {
+      console.error('Failed to auto-save chat history:', err);
+    }
+  };
+
   const saveRecentSearch = (term) => {
-    if (!term.trim()) return;
+    if (!term || !term.trim()) return;
     const cleanTerm = term.trim();
     setRecentSearches((prev) => {
       const filtered = prev.filter((item) => item.toLowerCase() !== cleanTerm.toLowerCase());
@@ -97,6 +305,88 @@ function App() {
   const clearRecentSearches = () => {
     setRecentSearches([]);
     localStorage.removeItem('medresearch_recent_searches');
+  };
+
+  // Unified Search Execution Function
+  const executeSearch = async (searchTerm, statusFilter = trialStatusFilter, preserveChatId = null) => {
+    if (!searchTerm || !searchTerm.trim()) return;
+    const cleanQuery = searchTerm.trim();
+    setQuery(cleanQuery);
+    setSearched(true);
+    setLoading(true);
+    setAiLoading(true);
+    setAiSummary('');
+    saveRecentSearch(cleanQuery);
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+
+    try {
+      // 1. Concurrent Fetch: PubMed, OpenAlex, ClinicalTrials
+      const [pubmedRes, openAlexRes, trialsRes] = await Promise.allSettled([
+        axios.get(`${API_BASE_URL}/api/pubmed/search?q=${encodeURIComponent(cleanQuery)}`),
+        axios.get(`${API_BASE_URL}/api/openalex/search?q=${encodeURIComponent(cleanQuery)}`),
+        axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(cleanQuery)}&status=${statusFilter}`)
+      ]);
+
+      const fetchedPubmed = pubmedRes.status === 'fulfilled' ? (pubmedRes.value.data.results || []) : [];
+      const fetchedOpenAlex = openAlexRes.status === 'fulfilled' ? (openAlexRes.value.data.results || []) : [];
+      const fetchedTrials = trialsRes.status === 'fulfilled' ? (trialsRes.value.data.results || []) : [];
+
+      setPubmedPapers(fetchedPubmed);
+      setOpenAlexPapers(fetchedOpenAlex);
+      setTrials(fetchedTrials);
+      setLoading(false);
+
+      // 2. Synthesize Evidence with Gemini AI
+      const combinedPapers = [...fetchedPubmed, ...fetchedOpenAlex];
+      if (combinedPapers.length > 0) {
+        try {
+          const aiRes = await axios.post(`${API_BASE_URL}/api/ai/synthesize`, {
+            query: cleanQuery,
+            papers: combinedPapers.slice(0, 8)
+          });
+          const summary = aiRes.data.summary || 'Summary generated.';
+          setAiSummary(summary);
+
+          // Auto-save search thread to MongoDB if authenticated
+          if (authToken) {
+            saveChatToDatabase(
+              cleanQuery,
+              [{ role: 'assistant', text: summary }],
+              combinedPapers.slice(0, 8),
+              preserveChatId
+            );
+          }
+        } catch (aiErr) {
+          console.error('Synthesis error:', aiErr);
+          setAiSummary('AI Evidence Synthesis is currently unavailable. Please inspect the source papers directly.');
+        }
+      } else {
+        setAiSummary('No academic papers found matching this search term.');
+      }
+    } catch (err) {
+      console.error('Search execution failed:', err);
+    } finally {
+      setLoading(false);
+      setAiLoading(false);
+    }
+  };
+
+  // Alias handleSearch to executeSearch for backward compatibility
+  const handleSearch = (term) => executeSearch(term);
+
+  // Restore Chat from History
+  const handleSelectHistoryChat = (chat) => {
+    setCurrentChatId(chat._id);
+    const topic = chat.topic || chat.title || '';
+    setQuery(topic);
+    setChatMessages(chat.messages || []);
+    setSearched(true);
+    setDrawerOpen(false);
+    executeSearch(topic, trialStatusFilter, chat._id);
   };
 
   // Check Eligibility with Gemini
@@ -141,16 +431,10 @@ function App() {
         const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
         setSpokenTranscript(transcript);
 
-        if (event.results[0].isFinal) {
-          setQuery(transcript);
-          setSphereStatus('THINKING');
+    if (event.results[0].isFinal) {
           if (recognitionRef.current) recognitionRef.current.stop();
           setIsListening(false);
-          executeSearch(transcript);
-          setTimeout(() => {
-            setVoiceModalOpen(false);
-            setSphereStatus('READY');
-          }, 1200);
+          handleVoiceConversation(transcript);
         }
       };
 
@@ -254,7 +538,7 @@ function App() {
     };
   }, [voiceModalOpen, sphereStatus]);
 
- const handleSphereClick = () => {
+  const handleSphereClick = () => {
     if (!recognitionRef.current) {
       alert('Speech recognition is supported in Google Chrome or Microsoft Edge.');
       return;
@@ -282,90 +566,70 @@ function App() {
   };
 
   const speakText = (text) => {
-    if (!('speechSynthesis' in window)) return;
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setSphereStatus('READY');
+    if (!('speechSynthesis' in window)) {
+      alert('Speech synthesis is not supported in this browser.');
       return;
     }
 
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      if (typeof setSphereStatus === 'function') setSphereStatus('READY');
+      return;
+    }
+
+    if (!text || typeof text !== 'string' || !text.trim()) return;
+
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*#_•]/g, '').trim();
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+
+    // Clean markdown characters and extra whitespace
+    const cleanText = text
+      .replace(/[*#_`~>\[\]\(\)]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Split into sentences for Chrome compatibility
+    const sentences = cleanText.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [cleanText];
+    const validSentences = sentences.map(s => s.trim()).filter(Boolean);
+
+    if (validSentences.length === 0) return;
 
     const voices = window.speechSynthesis.getVoices();
-    const naturalVoice = voices.find(v => v.name.includes('Google') || v.name.includes('Natural') || v.lang === 'en-US');
-    if (naturalVoice) utterance.voice = naturalVoice;
+    const voice = voices.find((v) => v.lang.startsWith('en')) || (voices.length > 0 ? voices[0] : null);
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      setSphereStatus('SPEAKING');
-    };
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setSphereStatus('READY');
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setSphereStatus('READY');
-    };
+    setIsSpeaking(true);
+    if (typeof setSphereStatus === 'function') setSphereStatus('SPEAKING');
 
-    window.speechSynthesis.speak(utterance);
-  };
+    let currentIndex = 0;
 
-  const executeSearch = async (searchTerm, status = trialStatusFilter) => {
-    if (!searchTerm.trim()) return;
-
-    saveRecentSearch(searchTerm);
-
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-
-    setLoading(true);
-    setSearched(true);
-    setAiSummary('');
-    setChatMessages([]);
-    setEligibilityResults({});
-
-    try {
-      const [pubmedResult, openalexResult, trialsResult] = await Promise.allSettled([
-          axios.get(`${API_BASE_URL}/api/research/search?q=${encodeURIComponent(searchTerm)}`),
-          axios.get(`${API_BASE_URL}/api/openalex/search?q=${encodeURIComponent(searchTerm)}`),
-          axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(searchTerm)}&status=${status}`)
-        ]);
-
-        const fetchedPubmed = pubmedResult.status === 'fulfilled' ? (pubmedResult.value.data.results || []) : [];
-        const fetchedOpenalex = openalexResult.status === 'fulfilled' ? (openalexResult.value.data.results || []) : [];
-        const fetchedTrials = trialsResult.status === 'fulfilled' ? (trialsResult.value.data.results || []) : [];
-      setPubmedPapers(fetchedPubmed);
-      setOpenAlexPapers(fetchedOpenalex);
-      setTrials(fetchedTrials);
-      setLoading(false);
-
-      const combinedPapers = [...fetchedPubmed, ...fetchedOpenalex];
-      if (combinedPapers.length > 0) {
-        setAiLoading(true);
-        try {
-          const aiRes = await axios.post(`${API_BASE_URL}/api/ai/summarize`, {
-            topic: searchTerm,
-            contextPapers: combinedPapers.slice(0, 8)
-          });
-          setAiSummary(aiRes.data.summary);
-        } catch (err) {
-          console.error('AI summary error:', err);
-          setAiSummary('AI summarization unavailable.');
-        } finally {
-          setAiLoading(false);
-        }
+    const speakNextSentence = () => {
+      if (currentIndex >= validSentences.length) {
+        setIsSpeaking(false);
+        if (typeof setSphereStatus === 'function') setSphereStatus('READY');
+        return;
       }
-    } catch (err) {
-      console.error('Error fetching data:', err);
-      alert('Backend connection error. Make sure the backend server is running.');
-      setLoading(false);
-    }
+
+      const utterance = new SpeechSynthesisUtterance(validSentences[currentIndex]);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      if (voice) utterance.voice = voice;
+
+      utterance.onend = () => {
+        currentIndex++;
+        speakNextSentence();
+      };
+
+      utterance.onerror = (e) => {
+        if (e.error === 'interrupted' || e.error === 'canceled') return;
+        console.error('TTS error:', e);
+        setIsSpeaking(false);
+        if (typeof setSphereStatus === 'function') setSphereStatus('READY');
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    setTimeout(speakNextSentence, 50);
   };
 
   const handleSearchSubmit = (e) => {
@@ -374,12 +638,11 @@ function App() {
   };
 
   const handleTopicClick = (item) => {
-    setQuery(item.query);
-    executeSearch(item.query);
+    const q = item.query || item.title || item;
+    executeSearch(q);
   };
 
   const handleRecentClick = (term) => {
-    setQuery(term);
     executeSearch(term);
   };
 
@@ -388,7 +651,7 @@ function App() {
     if (!query.trim()) return;
     try {
       const trialsRes = await axios.get(`${API_BASE_URL}/api/trials/search?q=${encodeURIComponent(query)}&status=${status}`);
-      setTrials(fetchedTrials);
+      setTrials(trialsRes.data.results || []);
     } catch (err) {
       console.error('Error filtering trials:', err);
     }
@@ -412,7 +675,6 @@ function App() {
         ...extracted,
         fileName: file.name
       });
-      setQuery(extracted.searchTerm);
       executeSearch(extracted.searchTerm);
     } catch (err) {
       console.error('Upload analysis failed:', err);
@@ -428,7 +690,7 @@ function App() {
     if (!chatInput.trim() || chatLoading) return;
 
     const userText = chatInput.trim();
-    const newMessages = [...chatMessages, { sender: 'user', text: userText }];
+    const newMessages = [...chatMessages, { role: 'user', text: userText }];
     setChatMessages(newMessages);
     setChatInput('');
     setChatLoading(true);
@@ -442,11 +704,16 @@ function App() {
       });
 
       const aiReply = res.data.answer;
-      setChatMessages([...newMessages, { sender: 'ai', text: aiReply }]);
+      const updatedMessages = [...newMessages, { role: 'assistant', text: aiReply }];
+      setChatMessages(updatedMessages);
       speakText(aiReply);
+
+      if (authToken) {
+        saveChatToDatabase(query, updatedMessages, combinedPapers.slice(0, 8), currentChatId);
+      }
     } catch (err) {
       console.error('Chat error:', err);
-      setChatMessages([...newMessages, { sender: 'ai', text: 'Sorry, I encountered an error answering that.' }]);
+      setChatMessages([...newMessages, { role: 'assistant', text: 'Sorry, I encountered an error answering that.' }]);
     } finally {
       setChatLoading(false);
     }
@@ -466,13 +733,17 @@ function App() {
       .slice(0, 8)
       .map((p) => `
         <li style="margin-bottom: 10px;">
-          <strong>[${p.db}]${p.title}</strong><br/>
+          <strong>[${p.db || 'Paper'}] ${p.title}</strong><br/>
           <span style="color: #64748b; font-size: 13px;">Source: ${p.source} (${p.pubDate})</span>
         </li>
       `)
       .join('');
 
     const printWindow = window.open('', '_blank', 'width=800,height=900');
+    if (!printWindow) {
+      alert('Please allow popups to save the PDF summary.');
+      return;
+    }
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -489,7 +760,7 @@ function App() {
         <body>
           <div class="header">
             <h1 style="margin: 0; color: #2c2523; font-size: 24px; font-weight: 700;">MedResearch AI Summary</h1>
-            <p style="margin: 6px 0 0 0; color: #8c827a; font-size: 14px;">Condition: <strong>${query.toUpperCase()}</strong> \vert{} Date:${date}</p>
+            <p style="margin: 6px 0 0 0; color: #8c827a; font-size: 14px;">Condition: <strong>${query.toUpperCase()}</strong> | Date: ${date}</p>
           </div>
           <div>
             <span class="badge">Gemini Multi-Source Synthesis</span>
@@ -497,7 +768,7 @@ function App() {
           </div>
           <h3 style="margin-top: 28px; font-size: 16px; color: #2c2523;">Referenced Academic Literature:</h3>
           <ol style="padding-left: 20px; font-size: 13.5px; line-height: 1.6;">${formattedPapers}</ol>
-          <div class="footer">MedResearch AI — BCA Final Year Project. Multi-database synthesis across PubMed & OpenAlex.</div>
+          <div class="footer">MedResearch AI — Multi-database synthesis across PubMed & OpenAlex.</div>
         </body>
       </html>
     `);
@@ -506,7 +777,7 @@ function App() {
     setTimeout(() => { printWindow.print(); }, 400);
   };
 
- const theme = {
+  const theme = {
     bg: darkMode ? '#070b14' : '#ffffff',
     cardBg: darkMode ? 'rgba(15, 23, 42, 0.72)' : 'rgba(255, 255, 255, 0.88)',
     text: darkMode ? '#f1f5f9' : '#0f172a',
@@ -522,6 +793,7 @@ function App() {
     chatBubbleAi: darkMode ? 'rgba(30, 41, 59, 0.85)' : '#f8fafc',
     dockBg: darkMode ? 'rgba(11, 15, 25, 0.85)' : 'rgba(255, 255, 255, 0.9)',
     dockBorder: darkMode ? 'rgba(56, 189, 248, 0.15)' : 'rgba(226, 232, 240, 0.9)',
+    drawerBg: darkMode ? '#0c1322' : '#ffffff',
   };
 
   return (
@@ -531,11 +803,12 @@ function App() {
       color: theme.text,
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
       paddingBottom: '120px',
-position: 'relative',
-    overflowX: 'hidden',
+      position: 'relative',
+      overflowX: 'hidden',
       transition: 'background-color 0.25s ease, color 0.25s ease'
     }}>
-<ParticleBackground darkMode={darkMode} />
+      <ParticleBackground darkMode={darkMode} />
+
       <input
         type="file"
         ref={fileInputRef}
@@ -544,16 +817,60 @@ position: 'relative',
         style={{ display: 'none' }}
       />
 
-      {/* Header */}
-      <header style={{ padding: '1.25rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '680px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+      {/* HEADER */}
+      <header style={{ padding: '1.25rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '780px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            title="Open Chat History"
+            style={{
+              background: theme.pillBg,
+              border: `1px solid ${theme.border}`,
+              color: theme.text,
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.1rem'
+            }}
+          >
+            ☰
+          </button>
+
           <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: theme.pillBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>
             🔬
           </div>
           <span style={{ fontSize: '0.95rem', fontWeight: '700', letterSpacing: '-0.01em', color: theme.text }}>MedResearch AI</span>
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {/* How It Works Button */}
+          {currentUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: theme.primary, backgroundColor: theme.pillBg, padding: '0.3rem 0.65rem', borderRadius: '9999px', border: `1px solid ${theme.border}` }}>
+                👤 {currentUser.name.split(' ')[0]}
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setAuthMode('login'); setAuthModalOpen(true); }}
+              style={{
+                backgroundColor: theme.primary,
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.35rem 0.8rem',
+                borderRadius: '9999px',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: '700'
+              }}
+            >
+              Sign In
+            </button>
+          )}
+
           <button
             onClick={() => setShowHowItWorks(true)}
             style={{
@@ -567,10 +884,9 @@ position: 'relative',
               fontWeight: '700'
             }}
           >
-            ℹ️ How It Works
+            ℹ️ Info
           </button>
-         
-          {/* Theme Toggle */}
+
           <button
             onClick={() => setDarkMode(!darkMode)}
             style={{
@@ -586,11 +902,315 @@ position: 'relative',
           >
             {darkMode ? '☀️' : '🌙'}
           </button>
-          <span style={{ fontSize: '0.7rem', backgroundColor: theme.pillBg, color: theme.subText, padding: '0.3rem 0.6rem', borderRadius: '9999px', fontWeight: '600' }}>
+
+          <span style={{
+            fontSize: '0.72rem',
+            backgroundColor: theme.pillBg,
+            color: theme.subText,
+            border: `1px solid ${theme.border}`,
+            padding: '0.3rem 0.65rem',
+            borderRadius: '9999px',
+            fontWeight: '600',
+            whiteSpace: 'nowrap'
+          }}>
             BCA Project
           </span>
         </div>
       </header>
+
+      {/* SLIDE-OUT HISTORY DRAWER */}
+      {drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 99999,
+            backdropFilter: 'blur(2px)'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '320px',
+              maxWidth: '85vw',
+              height: '100%',
+              backgroundColor: theme.drawerBg,
+              borderRight: `1px solid ${theme.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '1.5rem 1.25rem',
+              boxShadow: '10px 0 30px rgba(0,0,0,0.25)',
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.3rem' }}>🔬</span>
+                <span style={{ fontWeight: '800', fontSize: '1rem', color: theme.text }}>Research History</span>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: theme.subText }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <button
+              onClick={handleNewChat}
+              style={{
+                backgroundColor: theme.primary,
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.75rem 1rem',
+                borderRadius: '12px',
+                fontWeight: '700',
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                marginBottom: '1.5rem',
+                boxShadow: '0 4px 12px rgba(14, 165, 233, 0.25)'
+              }}
+            >
+              <span>+</span> New Chat
+            </button>
+
+            {currentUser ? (
+              <div style={{
+                backgroundColor: theme.pillBg,
+                padding: '0.75rem 1rem',
+                borderRadius: '12px',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: '700', color: theme.text }}>{currentUser.name}</div>
+                  <div style={{ fontSize: '0.72rem', color: theme.subText }}>{currentUser.email}</div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <div style={{
+                backgroundColor: theme.pillBg,
+                padding: '0.85rem',
+                borderRadius: '12px',
+                marginBottom: '1.25rem',
+                textAlign: 'center'
+              }}>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', color: theme.subText }}>
+                  Sign in to save searches and chat history to MongoDB Atlas.
+                </p>
+                <button
+                  onClick={() => { setDrawerOpen(false); setAuthMode('login'); setAuthModalOpen(true); }}
+                  style={{
+                    backgroundColor: theme.primary,
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.4rem 0.9rem',
+                    borderRadius: '8px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Sign In / Register
+                </button>
+              </div>
+            )}
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '700', color: theme.subText, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                Past Conversations
+              </div>
+
+              {savedHistory.length === 0 ? (
+                <div style={{ color: theme.subText, fontSize: '0.8rem', padding: '1rem 0', textAlign: 'center' }}>
+                  {currentUser ? 'No saved chats yet. Start searching!' : 'Sign in to access saved chats.'}
+                </div>
+              ) : (
+                savedHistory.map((chat) => (
+                  <div
+                    key={chat._id}
+                    onClick={() => handleSelectHistoryChat(chat)}
+                    style={{
+                      backgroundColor: currentChatId === chat._id ? theme.pillBg : 'transparent',
+                      border: `1px solid ${currentChatId === chat._id ? theme.primary : theme.border}`,
+                      borderRadius: '10px',
+                      padding: '0.65rem 0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease'
+                    }}
+                  >
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        💬 {chat.title || chat.topic}
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: theme.subText, marginTop: '2px' }}>
+                        {new Date(chat.createdAt).toLocaleDateString()} • {chat.messages?.length || 0} msgs
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={(e) => handleDeleteChat(e, chat._id)}
+                      title="Delete chat"
+                      style={{ background: 'none', border: 'none', color: theme.subText, cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AUTHENTICATION MODAL */}
+      {authModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          zIndex: 100000,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1.25rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            backgroundColor: theme.cardBg,
+            borderRadius: '22px',
+            padding: '2rem',
+            maxWidth: '400px',
+            width: '100%',
+            boxShadow: '0 15px 50px rgba(0,0,0,0.35)',
+            border: `1px solid ${theme.border}`,
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: theme.text }}>
+                {authMode === 'login' ? 'Sign In' : 'Create Account'}
+              </h3>
+              <button
+                onClick={() => setAuthModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: theme.subText }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {authError && (
+              <div style={{ backgroundColor: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.78rem', marginBottom: '1rem' }}>
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              {authMode === 'register' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: theme.subText, marginBottom: '0.3rem' }}>FULL NAME</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Hemanth Kumar"
+                    value={authForm.name}
+                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '0.65rem 0.85rem', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, outline: 'none', fontSize: '0.85rem' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: theme.subText, marginBottom: '0.3rem' }}>EMAIL ADDRESS</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={authForm.email}
+                  onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.65rem 0.85rem', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, outline: 'none', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: theme.subText, marginBottom: '0.3rem' }}>PASSWORD</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.65rem 0.85rem', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.pillBg, color: theme.text, outline: 'none', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                style={{
+                  backgroundColor: theme.primary,
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.75rem',
+                  borderRadius: '12px',
+                  fontWeight: '700',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  marginTop: '0.5rem'
+                }}
+              >
+                {authLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
+              </button>
+            </form>
+
+            <div style={{ marginTop: '1.25rem', textAlign: 'center', fontSize: '0.8rem', color: theme.subText }}>
+              {authMode === 'login' ? (
+                <>
+                  Don't have an account?{' '}
+                  <span
+                    onClick={() => { setAuthMode('register'); setAuthError(''); }}
+                    style={{ color: theme.primary, cursor: 'pointer', fontWeight: '700' }}
+                  >
+                    Register
+                  </span>
+                </>
+              ) : (
+                <>
+                  Already registered?{' '}
+                  <span
+                    onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                    style={{ color: theme.primary, cursor: 'pointer', fontWeight: '700' }}
+                  >
+                    Sign In
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <div style={{ maxWidth: '580px', margin: '1rem auto 0 auto', padding: '0 1.25rem', textAlign: 'center' }}>
@@ -665,6 +1285,9 @@ position: 'relative',
                 </button>
               ))}
             </div>
+
+            {/* Reference Design: Metrics & Precision Grid */}
+            <LandingHero onSelectTopic={(t) => executeSearch(t)} theme={theme} />
 
             {/* Recent Searches */}
             {recentSearches.length > 0 && (
@@ -742,7 +1365,7 @@ position: 'relative',
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ fontSize: '1.05rem', fontWeight: '700', color: theme.primary }}>✨ AI Evidence Synthesis</span>
-                  <span style={{ fontSize: '0.72rem', backgroundColor: darkMode ? '#1e293b' : '#fbece5', color: theme.primary, padding: '0.2rem 0.55rem', borderRadius: '6px', fontWeight: '700' }}>Gemini 3.6 Flash</span>
+                  <span style={{ fontSize: '0.72rem', backgroundColor: darkMode ? '#1e293b' : '#fbece5', color: theme.primary, padding: '0.2rem 0.55rem', borderRadius: '6px', fontWeight: '700' }}>Gemini</span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   {aiSummary && !aiLoading && !aiSummary.includes('unavailable') && (
@@ -805,20 +1428,20 @@ position: 'relative',
                         <div
                           key={i}
                           style={{
-                            alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                            backgroundColor: msg.sender === 'user' ? theme.chatBubbleUser : theme.chatBubbleAi,
-                            color: msg.sender === 'user' ? '#ffffff' : theme.text,
+                            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                            backgroundColor: msg.role === 'user' ? theme.chatBubbleUser : theme.chatBubbleAi,
+                            color: msg.role === 'user' ? '#ffffff' : theme.text,
                             padding: '0.65rem 0.95rem',
                             borderRadius: '12px',
                             maxWidth: '82%',
                             fontSize: '0.85rem',
                             lineHeight: '1.5',
-                            border: msg.sender === 'ai' ? `1px solid ${theme.border}` : 'none'
+                            border: msg.role === 'assistant' ? `1px solid ${theme.border}` : 'none'
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                             <span>{msg.text}</span>
-                            {msg.sender === 'ai' && (
+                            {msg.role === 'assistant' && (
                               <button
                                 onClick={() => speakText(msg.text)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', padding: 0 }}
@@ -1112,16 +1735,16 @@ position: 'relative',
               </div>
 
               <div style={{ backgroundColor: theme.pillBg, padding: '0.85rem 1rem', borderRadius: '12px' }}>
-                <strong style={{ color: theme.primary }}>3. Grounded Evidence Synthesis & Voice Interaction</strong>
+                <strong style={{ color: theme.primary }}>3. Grounded Evidence Synthesis & Persistent MongoDB Storage</strong>
                 <p style={{ margin: '0.35rem 0 0 0', color: theme.subText, lineHeight: '1.5' }}>
-                  Synthesizes scientific findings into 3 key takeaways with source citations. Features an interactive 3D particle voice orb for hands-free speech queries and AI audio playback.
+                  Synthesizes scientific findings into key takeaways with source citations. Integrated with <b>MongoDB Atlas</b> and <b>JWT</b> to securely save query threads across sessions.
                 </p>
               </div>
 
               <div style={{ backgroundColor: theme.pillBg, padding: '0.85rem 1rem', borderRadius: '12px' }}>
                 <strong style={{ color: theme.primary }}>4. Patient Protocol Eligibility Matching</strong>
                 <p style={{ margin: '0.35rem 0 0 0', color: theme.subText, lineHeight: '1.5' }}>
-                  Evaluates a patient's clinical baseline (Age, Sex, Medical Notes) against intricate inclusion and exclusion trial criteria to determine suitability.
+                  Evaluates a patient's clinical baseline against trial criteria to calculate match status.
                 </p>
               </div>
             </div>
@@ -1147,7 +1770,6 @@ position: 'relative',
         </div>
       )}
 
-  
       {/* Floating Bottom Bar */}
       <div style={{
         position: 'fixed',
@@ -1330,18 +1952,23 @@ position: 'relative',
             {sphereStatus}
           </div>
 
-          <p style={{
-            marginTop: '1.2rem',
-            fontSize: '0.98rem',
-            color: '#d4d4d8',
-            maxWidth: '360px',
-            textAlign: 'center',
-            lineHeight: '1.5'
-          }}>
-            {spokenTranscript ? `"${spokenTranscript}"` : (
-              isListening ? 'Listening... speak medical query' : 'Tap the sphere to begin'
-            )}
-          </p>
+         <p style={{
+          marginTop: '1.2rem',
+          fontSize: '0.95rem',
+          color: '#d4d4d8',
+          maxWidth: '380px',
+          textAlign: 'center',
+          lineHeight: '1.5',
+          minHeight: '48px'
+        }}>
+          {sphereStatus === 'SPEAKING' && chatMessages.length > 0
+            ? chatMessages[chatMessages.length - 1].text
+            : spokenTranscript
+            ? `"${spokenTranscript}"`
+            : isListening
+            ? 'Listening... speak your question'
+            : 'Tap the sphere to talk'}
+        </p>
         </div>
       )}
     </div>

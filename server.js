@@ -2,11 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'medresearch_default_jwt_secret_2026';
 
 const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }
@@ -15,9 +19,207 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
+// ==========================================
+// 1. MONGODB ATLAS CONNECTION
+// ==========================================
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI)
+    .then(() => console.log(' Connected to MongoDB Atlas successfully!'))
+    .catch(err => console.error(' MongoDB Atlas Connection Error:', err.message));
+} else {
+  console.warn('⚠️ MONGODB_URI not found in .env file.');
+}
+
+// ==========================================
+// 2. MONGOOSE SCHEMAS & MODELS
+// ==========================================
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const chatHistorySchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  title: { type: String, required: true },
+  topic: { type: String, default: '' },
+  messages: [
+    {
+      role: { type: String, enum: ['user', 'assistant'], required: true },
+      text: { type: String, required: true },
+      timestamp: { type: Date, default: Date.now }
+    }
+  ],
+  contextPapers: { type: Array, default: [] },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const ChatHistory = mongoose.model('ChatHistory', chatHistorySchema);
+
+// Auth Middleware to protect routes
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // "Bearer <token>"
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied. Sign in required.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Session expired or invalid token.' });
+    req.user = user;
+    next();
+  });
+};
+
+// ==========================================
+// 3. AUTHENTICATION ROUTES
+// ==========================================
+
+// Register
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required.' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'An account with this email already exists.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = await User.create({
+      name,
+      email,
+      password: hashedPassword
+    });
+
+    const token = jwt.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(201).json({
+      message: 'Account created successfully!',
+      token,
+      user: { id: newUser._id, name: newUser.name, email: newUser.email }
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Failed to create account.' });
+  }
+});
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({
+      message: 'Logged in successfully!',
+      token,
+      user: { id: user._id, name: user.name, email: user.email }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Failed to log in.' });
+  }
+});
+
+// Current User profile check
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch user profile.' });
+  }
+});
+
+// ==========================================
+// 4. CONVERSATION HISTORY ROUTES
+// ==========================================
+
+// Get all chat sessions for logged-in user
+app.get('/api/history', authenticateToken, async (req, res) => {
+  try {
+    const chats = await ChatHistory.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .select('title topic createdAt messages');
+    res.json({ chats });
+  } catch (error) {
+    console.error('Fetch history error:', error);
+    res.status(500).json({ error: 'Failed to fetch conversation history.' });
+  }
+});
+
+// Save or append to a conversation
+app.post('/api/history/save', authenticateToken, async (req, res) => {
+  try {
+    const { chatId, title, topic, messages, contextPapers } = req.body;
+
+    if (chatId) {
+      // Update existing chat
+      const updatedChat = await ChatHistory.findOneAndUpdate(
+        { _id: chatId, userId: req.user.id },
+        { title, topic, messages, contextPapers },
+        { new: true }
+      );
+      return res.json({ chat: updatedChat });
+    }
+
+    // Create new chat
+    const newChat = await ChatHistory.create({
+      userId: req.user.id,
+      title: title || topic || 'Medical Research Query',
+      topic: topic || '',
+      messages: messages || [],
+      contextPapers: contextPapers || []
+    });
+
+    res.status(201).json({ chat: newChat });
+  } catch (error) {
+    console.error('Save history error:', error);
+    res.status(500).json({ error: 'Failed to save conversation.' });
+  }
+});
+
+// Delete a conversation
+app.delete('/api/history/:id', authenticateToken, async (req, res) => {
+  try {
+    await ChatHistory.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    res.json({ message: 'Conversation deleted successfully.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete conversation.' });
+  }
+});
+
+// ==========================================
+// 5. EXISTING AI & SEARCH LOGIC
+// ==========================================
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Fallback helper to handle quota/rate limits seamlessly
 async function generateWithFallback(contents, preferredModel = 'gemini-3.5-flash-lite') {
   const modelsToTry = [
     preferredModel,
@@ -47,9 +249,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'MedResearch AI backend is running!' });
 });
 
-// 1. PubMed Search Route
-app.get('/api/research/search', async (req, res) => {
-  try {
+// PubMed Search Route
+app.get('/api/pubmed/search', async (req, res) => {  try {
     const query = req.query.q || 'lung cancer';
     const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmode=json&retmax=5`;
     const searchResponse = await axios.get(searchUrl);
@@ -83,7 +284,7 @@ app.get('/api/research/search', async (req, res) => {
   }
 });
 
-// 2. OpenAlex Search Route
+// OpenAlex Search Route
 app.get('/api/openalex/search', async (req, res) => {
   try {
     const query = req.query.q || 'lung cancer';
@@ -111,7 +312,7 @@ app.get('/api/openalex/search', async (req, res) => {
   }
 });
 
-// 3. ClinicalTrials.gov Search Route
+// ClinicalTrials.gov Search Route
 app.get('/api/trials/search', async (req, res) => {
   try {
     const query = req.query.q || 'lung cancer';
@@ -153,74 +354,64 @@ app.get('/api/trials/search', async (req, res) => {
   }
 });
 
-// 4. Multi-Source AI Synthesis Route
-app.post('/api/ai/summarize', async (req, res) => {
+// Multi-Source AI Synthesis Route
+app.post(['/api/ai/synthesize', '/api/ai/summarize'], async (req, res) => {
   try {
-    const { topic, contextPapers } = req.body;
-
-    if (!contextPapers || contextPapers.length === 0) {
-      return res.status(400).json({ error: 'No research context provided.' });
-    }
+    const topic = req.body.topic || req.body.query || 'Medical Research';
+    const contextPapers = req.body.contextPapers || req.body.papers || [];
 
     const titlesList = contextPapers
-      .map((p, idx) => `${idx + 1}. [${p.db || 'Paper'}] ${p.title} (${p.source}, ${p.pubDate})`)
+      .map((p, idx) => `${idx + 1}. [${p.db || 'Paper'}] ${p.title} (${p.source || ''})`)
       .join('\n');
 
-    const prompt = `You are a medical research assistant for an academic tool.
+    const prompt = `You are a medical research assistant for MedResearch AI.
 Topic: "${topic}"
 
 Synthesize evidence from these PubMed and OpenAlex publications:
 ${titlesList}
 
 Instructions:
-1. Provide a 3-bullet synthesis highlighting key medical themes and findings.
+1. Provide a 3-bullet synthesis highlighting key medical themes.
 2. Maintain objective academic language.
 3. Add a brief closing sentence on overall scientific direction.`;
 
-    const response = await generateWithFallback(prompt, 'gemini-3.5-flash-lite');
+    const response = await generateWithFallback(prompt, 'gemini-2.5-flash');
     res.json({ summary: response.text });
   } catch (error) {
-    console.error('Error running AI summarization:', error.message);
-    res.status(500).json({ error: 'AI summarization rate limit reached. Please retry in a few seconds.' });
+    console.error('Error running AI summarization:', error);
+    res.status(500).json({ error: 'AI summarization rate limit or failure.' });
   }
 });
-
-// 5. Interactive Q&A Chat Route
+// Interactive Q&A Chat Route (Voice & Text)
 app.post('/api/ai/chat', async (req, res) => {
   try {
     const { question, contextPapers, topic } = req.body;
 
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required.' });
-    }
-
-    const contextText = (contextPapers || [])
-      .map((p, idx) => `[Study ${idx + 1}] Title: ${p.title} | Source: ${p.source} (${p.pubDate})`)
+    const paperContext = (contextPapers || [])
+      .slice(0, 5)
+      .map((p, i) => `[${i + 1}] ${p.title} (${p.source || ''})`)
       .join('\n');
 
-    const prompt = `You are an AI Medical Research Assistant discussing the topic "${topic}".
-Use the following retrieved studies to answer the user's question accurately and objectively:
-
-Retrieved Literature:
-${contextText}
+    const prompt = `You are MedResearch AI, an authentic biomedical voice assistant.
+Current Topic: "${topic || 'General Medical Research'}"
+Referenced Literature:
+${paperContext}
 
 User Question: "${question}"
 
 Instructions:
-- Provide a clear, concise, direct response (under 120 words).
-- Explicitly cite the study titles or numbers when mentioning specific findings.
-- If the retrieved papers do not contain enough information to answer, state that clearly without guessing.
-- Do not provide medical prescriptions or clinical diagnoses.`;
+- Provide a clear, natural answer in 2 to 3 spoken sentences.
+- Speak directly as an expert collaborator.
+- Do NOT use markdown symbols like asterisks (**), numbers, bullet points, or citations, as this text will be read aloud by browser text-to-speech.`;
 
-    const response = await generateWithFallback(prompt, 'gemini-3.5-flash-lite');
+    const response = await generateWithFallback(prompt, 'gemini-2.5-flash');
     res.json({ answer: response.text });
   } catch (error) {
-    console.error('Chat error:', error.message);
-    res.status(500).json({ error: 'Failed to generate response.' });
+    console.error('Chat route error:', error);
+    res.status(500).json({ answer: "I could not analyze that question right now. Please try again." });
   }
 });
-
-// 6. Medical Report Vision Route
+// Medical Report Vision Route
 app.post('/api/ai/analyze-report', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -281,7 +472,7 @@ Return ONLY raw JSON without markdown backticks:
   }
 });
 
-// 7. Clinical Trial Eligibility Matcher Route
+// Clinical Trial Eligibility Matcher Route
 app.post('/api/ai/match-eligibility', async (req, res) => {
   try {
     const { patientProfile, trial } = req.body;
