@@ -3,7 +3,7 @@ import axios from 'axios';
 import ParticleBackground from './ParticleBackground';
 import LandingHero from './LandingHero';
 
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'https://medresearch-ai-backend.onrender.com';
 
 function App() {
   const [query, setQuery] = useState('');
