@@ -1,9 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { ArrowRight, Brain, Dna, Droplets, HeartPulse, Mic, Paperclip, Search, ShieldPlus, Stethoscope } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import LandingHero from './LandingHero';
+import './App.css';
 
-const API_BASE_URL = 'https://medresearch-ai-backend.onrender.com';
+const API_BASE_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:5000'
+  : 'https://medresearch-ai-backend.onrender.com';
+
+function AiSummarySkeleton() {
+  return (
+    <div className="ai-summary-skeleton" role="status" aria-label="AI is synthesizing research results">
+      <p className="ai-summary-skeleton__status">Synthesizing cross-database literature...</p>
+      <div className="ai-summary-skeleton__lines" aria-hidden="true">
+        <span className="ai-summary-skeleton__line ai-summary-skeleton__line--wide" />
+        <span className="ai-summary-skeleton__line" />
+        <span className="ai-summary-skeleton__line ai-summary-skeleton__line--medium" />
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [query, setQuery] = useState('');
@@ -92,12 +109,12 @@ function App() {
   const fileInputRef = useRef(null);
 
   const featuredTopics = [
-    { icon: '🫁', title: 'Lung Cancer', subtitle: 'Latest treatment for lung cancer', query: 'lung cancer treatment' },
-    { icon: '💉', title: 'Diabetes', subtitle: 'Clinical trials for diabetes', query: 'diabetes clinical trials' },
-    { icon: '🧠', title: "Alzheimer's", subtitle: "Top research in Alzheimer's disease", query: "Alzheimer's disease" },
-    { icon: '❤️', title: 'Heart Disease', subtitle: 'Recent studies on cardiovascular disease', query: 'heart disease' },
-    { icon: '🧬', title: 'Gene Therapy', subtitle: 'Latest gene therapy breakthroughs', query: 'gene therapy breakthroughs' },
-    { icon: '🦠', title: 'Immunotherapy', subtitle: 'Cancer immunotherapy clinical trials', query: 'cancer immunotherapy' },
+    { icon: Stethoscope, title: 'Lung Cancer', subtitle: 'Latest treatment for lung cancer', query: 'lung cancer treatment' },
+    { icon: Droplets, title: 'Diabetes', subtitle: 'Clinical trials for diabetes', query: 'diabetes clinical trials' },
+    { icon: Brain, title: "Alzheimer's", subtitle: "Top research in Alzheimer's disease", query: "Alzheimer's disease" },
+    { icon: HeartPulse, title: 'Heart Disease', subtitle: 'Recent studies on cardiovascular disease', query: 'heart disease' },
+    { icon: Dna, title: 'Gene Therapy', subtitle: 'Latest gene therapy breakthroughs', query: 'gene therapy breakthroughs' },
+    { icon: ShieldPlus, title: 'Immunotherapy', subtitle: 'Cancer immunotherapy clinical trials', query: 'cancer immunotherapy' },
   ];
 
   // Fetch Saved History from MongoDB
@@ -797,7 +814,7 @@ function App() {
   };
 
   return (
-    <div style={{
+    <div className={`app-shell${darkMode ? ' app-shell--dark' : ''}`} style={{
       minHeight: '100vh',
       backgroundColor: theme.bg,
       color: theme.text,
@@ -818,8 +835,8 @@ function App() {
       />
 
       {/* HEADER */}
-      <header style={{ padding: '1.25rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '780px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+      <header className="app-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '780px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
             onClick={() => setDrawerOpen(true)}
             title="Open Chat History"
@@ -843,7 +860,13 @@ function App() {
           <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: theme.pillBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>
             🔬
           </div>
-          <span style={{ fontSize: '0.95rem', fontWeight: '700', letterSpacing: '-0.01em', color: theme.text }}>MedResearch AI</span>
+          <div className="brand-lockup">
+            <span className="brand-title" style={{ color: theme.text }}>MedResearch AI</span>
+            <span className="live-status" role="status" aria-label="MedResearch AI is live">
+              <span className="live-status__dot" aria-hidden="true" />
+              Live
+            </span>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -884,7 +907,7 @@ function App() {
               fontWeight: '700'
             }}
           >
-            ℹ️ Info
+            How it works
           </button>
 
           <button
@@ -1213,23 +1236,16 @@ function App() {
       )}
 
       {/* Main Container */}
-      <div style={{ maxWidth: '580px', margin: '1rem auto 0 auto', padding: '0 1.25rem', textAlign: 'center' }}>
+      <main className="app-main" style={{ maxWidth: '580px', textAlign: 'center' }}>
         
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '18px', backgroundColor: darkMode ? '#1e293b' : '#fbece5', color: darkMode ? '#38bdf8' : '#e07a5f', fontSize: '1.6rem', marginBottom: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '16px', backgroundColor: darkMode ? '#1e293b' : '#fbece5', color: darkMode ? '#38bdf8' : '#e07a5f', fontSize: '1.6rem', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           ★
         </div>
 
-        <h1 style={{
-          fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif",
-          fontSize: '2.5rem',
-          fontWeight: '400',
-          margin: '0 0 0.6rem 0',
-          color: theme.text,
-          letterSpacing: '-0.02em'
-        }}>
+        <h1 className="app-greeting" style={{ color: theme.text }}>
           {getGreeting()}
         </h1>
-        <p style={{ fontSize: '1rem', color: theme.subText, margin: '0 0 2rem 0', fontWeight: '400', lineHeight: '1.5' }}>
+        <p className="app-intro" style={{ color: theme.subText }}>
           What medical research would you like to explore today?
         </p>
 
@@ -1253,7 +1269,7 @@ function App() {
         {/* Featured Category Cards */}
         {!searched && (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
               {featuredTopics.map((topic, idx) => (
                 <button
                   key={idx}
@@ -1262,7 +1278,7 @@ function App() {
                     backgroundColor: theme.topicCardBg,
                     border: `1px solid ${theme.border}`,
                     borderRadius: '18px',
-                    padding: '1rem 1.25rem',
+                    padding: '16px 24px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -1272,13 +1288,13 @@ function App() {
                     transition: 'transform 0.15s ease'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: theme.topicIconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.35rem', border: `1px solid ${theme.border}` }}>
-                      {topic.icon}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="topic-icon" style={{ backgroundColor: theme.topicIconBg, border: `1px solid ${theme.border}`, color: theme.primary }}>
+                      {React.createElement(topic.icon, { size: 20, strokeWidth: 1.8, 'aria-hidden': true })}
                     </div>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '700', color: theme.text }}>{topic.title}</h3>
-                      <p style={{ margin: 0, fontSize: '0.8rem', color: theme.subText }}>{topic.subtitle}</p>
+                    <h3 className="topic-title" style={{ color: theme.text }}>{topic.title}</h3>
+                    <p className="topic-subtitle" style={{ color: theme.subText }}>{topic.subtitle}</p>
                     </div>
                   </div>
                   <span style={{ color: theme.subText, fontSize: '1.2rem', fontWeight: '600' }}>›</span>
@@ -1348,23 +1364,23 @@ function App() {
 
         {/* Results View */}
         {searched && (
-          <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+          <div className="search-results" style={{ textAlign: 'left' }}>
             <button
               onClick={() => {
                 if (window.speechSynthesis) window.speechSynthesis.cancel();
                 setIsSpeaking(false);
                 setSearched(false);
               }}
-              style={{ backgroundColor: 'transparent', border: 'none', color: theme.primary, fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer', padding: 0, marginBottom: '1rem' }}
+              style={{ backgroundColor: 'transparent', border: 'none', color: theme.primary, fontWeight: '700', fontSize: '0.875rem', cursor: 'pointer', padding: 0, marginBottom: '16px' }}
             >
               ← Back to categories
             </button>
 
             {/* AI Summary Card */}
-            <div style={{ backgroundColor: theme.summaryBg, border: `1px solid ${theme.summaryBorder}`, borderRadius: '20px', padding: '1.6rem', marginBottom: '1.5rem', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div className="ai-summary-card" aria-busy={aiLoading} style={{ backgroundColor: theme.summaryBg, border: `1px solid ${theme.summaryBorder}`, boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+              <div className="ai-summary-card__header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1.05rem', fontWeight: '700', color: theme.primary }}>✨ AI Evidence Synthesis</span>
+                  <span className="ai-summary-card__title" style={{ color: theme.primary }}>✨ AI Evidence Synthesis</span>
                   <span style={{ fontSize: '0.72rem', backgroundColor: darkMode ? '#1e293b' : '#fbece5', color: theme.primary, padding: '0.2rem 0.55rem', borderRadius: '6px', fontWeight: '700' }}>Gemini</span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1400,9 +1416,9 @@ function App() {
               </div>
 
               {aiLoading ? (
-                <p style={{ margin: 0, fontSize: '0.9rem', color: theme.primary }}>Synthesizing cross-database literature...</p>
+                <AiSummarySkeleton />
               ) : (
-                <div style={{ fontSize: '0.92rem', lineHeight: '1.7', color: theme.text }}>
+                <div className="ai-summary-copy" style={{ color: theme.text }}>
                   {aiSummary ? (
                     aiSummary.split('\n').filter(l => l.trim().length > 0).map((para, i) => (
                       <p key={i} style={{ margin: '0.55rem 0' }}>
@@ -1672,7 +1688,7 @@ function App() {
             )}
           </div>
         )}
-      </div>
+      </main>
 
       {/* HOW IT WORKS / ABOUT MODAL */}
       {showHowItWorks && (
@@ -1771,7 +1787,7 @@ function App() {
       )}
 
       {/* Floating Bottom Bar */}
-      <div style={{
+      <div className="search-composer" style={{
         position: 'fixed',
         bottom: '18px',
         left: '50%',
@@ -1779,32 +1795,23 @@ function App() {
         width: '90%',
         maxWidth: '560px',
         backgroundColor: theme.dockBg,
-        borderRadius: '26px',
-        padding: '0.5rem 0.75rem 0.5rem 1.1rem',
+        borderRadius: '20px',
         boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
         border: `1px solid ${theme.dockBorder}`,
         display: 'flex',
         alignItems: 'center',
-        gap: '0.6rem',
         zIndex: 100,
         transition: 'border 0.2s ease, background-color 0.25s ease'
       }}>
-        <span style={{ fontSize: '1rem', color: theme.subText }}>🔍</span>
-        <form onSubmit={handleSearchSubmit} style={{ flex: 1, display: 'flex' }}>
+        <Search className="search-composer__search-icon" size={20} aria-hidden="true" />
+        <form onSubmit={handleSearchSubmit} className="search-composer__form">
           <input
             type="text"
             placeholder="Ask about any disease, treatment, or clinical trial..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            style={{
-              width: '100%',
-              border: 'none',
-              outline: 'none',
-              backgroundColor: 'transparent',
-              fontSize: '0.9rem',
-              color: theme.text,
-              fontFamily: 'inherit'
-            }}
+            className="search-composer__input"
+            style={{ color: theme.text }}
           />
         </form>
 
@@ -1812,21 +1819,10 @@ function App() {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           title="Upload medical report (PDF or Image)"
-          style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            backgroundColor: theme.pillBg,
-            border: 'none',
-            color: theme.text,
-            fontSize: '1rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          className="search-composer__icon-button"
+          style={{ backgroundColor: theme.pillBg, color: theme.text }}
         >
-          📎
+          <Paperclip size={18} aria-hidden="true" />
         </button>
 
         <button
@@ -1836,22 +1832,12 @@ function App() {
             setSphereStatus('READY');
             setSpokenTranscript('');
           }}
-          title="Open 3D Voice Assistant"
-          style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            backgroundColor: theme.pillBg,
-            border: 'none',
-            color: theme.primary,
-            fontSize: '1.1rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          title="Open voice assistant"
+          aria-label="Open voice assistant"
+          className="search-composer__icon-button"
+          style={{ backgroundColor: theme.pillBg, color: theme.primary }}
         >
-          🎙️
+          <Mic size={18} aria-hidden="true" />
         </button>
 
         <button
@@ -1859,22 +1845,11 @@ function App() {
           onClick={handleSearchSubmit}
           disabled={loading || !query.trim()}
           title="Search"
-          style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            backgroundColor: query.trim() ? theme.primary : theme.pillBg,
-            border: 'none',
-            color: '#ffffff',
-            fontSize: '1.1rem',
-            fontWeight: 'bold',
-            cursor: query.trim() ? 'pointer' : 'default',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          className="search-composer__submit"
+          style={{ backgroundColor: query.trim() ? theme.primary : theme.pillBg }}
         >
-          ↑
+          <span>Search</span>
+          <ArrowRight size={18} aria-hidden="true" />
         </button>
       </div>
 
