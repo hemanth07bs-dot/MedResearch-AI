@@ -836,10 +836,11 @@ function App() {
 
       {/* HEADER */}
       <header className="app-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '780px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="app-header__brand">
           <button
             onClick={() => setDrawerOpen(true)}
             title="Open Chat History"
+            className="app-header__menu"
             style={{
               background: theme.pillBg,
               border: `1px solid ${theme.border}`,
@@ -857,7 +858,7 @@ function App() {
             ☰
           </button>
 
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: theme.pillBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>
+          <div className="app-header__mark" style={{ backgroundColor: theme.pillBg }}>
             🔬
           </div>
           <div className="brand-lockup">
@@ -869,10 +870,10 @@ function App() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="app-header__actions">
           {currentUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: theme.primary, backgroundColor: theme.pillBg, padding: '0.3rem 0.65rem', borderRadius: '9999px', border: `1px solid ${theme.border}` }}>
+              <span className="app-header__user-name" style={{ color: theme.primary, backgroundColor: theme.pillBg, border: `1px solid ${theme.border}` }}>
                 👤 {currentUser.name.split(' ')[0]}
               </span>
             </div>
@@ -896,6 +897,7 @@ function App() {
 
           <button
             onClick={() => setShowHowItWorks(true)}
+            className="app-header__secondary"
             style={{
               backgroundColor: theme.pillBg,
               color: theme.primary,
@@ -912,6 +914,7 @@ function App() {
 
           <button
             onClick={() => setDarkMode(!darkMode)}
+            className="app-header__secondary"
             style={{
               backgroundColor: theme.pillBg,
               color: theme.text,
@@ -926,7 +929,7 @@ function App() {
             {darkMode ? '☀️' : '🌙'}
           </button>
 
-          <span style={{
+          <span className="app-header__project" style={{
             fontSize: '0.72rem',
             backgroundColor: theme.pillBg,
             color: theme.subText,
